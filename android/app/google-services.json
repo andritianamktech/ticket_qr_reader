@@ -30,6 +30,13 @@
             {
               "client_id": "440408611895-bpo2lbv0m2elcqlpahia1uqk8seu7ba2.apps.googleusercontent.com",
               "client_type": 3
+            },
+            {
+              "client_id": "440408611895-q917cj2dqld2p0c5b4rjn60sm2ghov11.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.ticketQrReader"
+              }
             }
           ]
         }

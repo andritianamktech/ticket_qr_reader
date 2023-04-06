@@ -1,7 +1,16 @@
+import 'dart:convert';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
+import 'dart:developer' as developer;
 
-void main() {
+Future main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+
   runApp(const MyApp());
 }
 
@@ -44,9 +53,17 @@ class MyHomePage extends StatefulWidget {
   State<MyHomePage> createState() => _MyHomePageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
+class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
   MobileScannerController cameraController = MobileScannerController();
   bool _screenOpened = false;
+
+  @override
+  void initState() {
+    // TODO: implement initState
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    debugPrint('initstate______initstate');
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -96,23 +113,77 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // TODO: implement didChangeAppLifecycleState
+    switch (state) {
+      case AppLifecycleState.paused:
+        cameraController.stop();
+        break;
+      case AppLifecycleState.resumed:
+        // debugPrint('resumed____cameracontroller');
+        cameraController.start();
+        break;
+      case AppLifecycleState.inactive:
+        // TODO: Handle this case.
+        break;
+      case AppLifecycleState.detached:
+        // TODO: Handle this case.
+        break;
+    }
+    super.didChangeAppLifecycleState(state);
+  }
+
+  @override
+  void dispose() {
+    // TODO: implement dispose
+    cameraController.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
   void _foundBarCode(BarcodeCapture barcode) {
+    cameraController.stop();
+    final db = FirebaseFirestore.instance;
+    final qrRef = db.collection('qr');
+    String status = "none";
+    String code = "";
     //open screen
     if (!_screenOpened) {
       Iterable<Barcode> barcodes = barcode.barcodes;
-      String code = "";
       for (Barcode bar_code in barcodes) {
         code = bar_code.rawValue ?? "---";
       }
       debugPrint('barcode found! $code');
-      _screenOpened = true;
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) =>
-              FoundCodeScreen(screenClosed: _screenWasClosed, value: code),
-        ),
-      );
+      db
+          .collection('qr')
+          .where('uuid', isEqualTo: code)
+          .get()
+          .then((querySnapshot) {
+        if (querySnapshot.size > 0) {
+          var doc = querySnapshot.docs[0];
+          var data = doc.data();
+          // debugPrint('${data}');
+          if (data['status'] == 'initialized') {
+            doc.reference.update({'status': 'checked'});
+            code = '${doc['type']} ${doc['place']}';
+            status = 'success';
+          } else {
+            code = '${doc['type']} ${doc['place']}';
+            status = 'fail';
+          }
+        } else {
+          code = 'inexistant';
+          status = 'invalid';
+        }
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => FoundCodeScreen(
+                screenClosed: _screenWasClosed, value: code, status: status),
+          ),
+        );
+      });
     }
   }
 
@@ -123,10 +194,14 @@ class _MyHomePageState extends State<MyHomePage> {
 
 class FoundCodeScreen extends StatefulWidget {
   final String value;
+  final String status;
   final Function() screenClosed;
 
   const FoundCodeScreen(
-      {Key? key, required this.value, required this.screenClosed})
+      {Key? key,
+      required this.value,
+      required this.status,
+      required this.screenClosed})
       : super(key: key);
 
   @override
@@ -138,7 +213,7 @@ class _FoundCodeScreenState extends State<FoundCodeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Found Code'),
+        title: const Text('Status'),
         centerTitle: true,
         leading: IconButton(
           onPressed: () {
@@ -154,19 +229,29 @@ class _FoundCodeScreenState extends State<FoundCodeScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
-                "Scanned Code:",
-                style: TextStyle(
-                  fontSize: 20,
+              Center(
+                child: Icon(
+                  widget.status == 'success'
+                      ? Icons.task_alt
+                      : widget.status == 'fail'
+                          ? Icons.warning
+                          : Icons.cancel,
+                  color: widget.status == 'success'
+                      ? Colors.green
+                      : widget.status == 'fail'
+                          ? Colors.deepOrange
+                          : Colors.red,
+                  size: 300.0,
                 ),
               ),
-              const SizedBox(
-                height: 20,
-              ),
               Text(
-                widget.value,
+                widget.status == 'success'
+                    ? "\"${widget.value}\" CHECKED"
+                    : widget.status == 'fail'
+                        ? "\"${widget.value}\" ALREADY CHECKED"
+                        : "NONE",
                 style: const TextStyle(
-                  fontSize: 16,
+                  fontSize: 25,
                 ),
               ),
             ],
